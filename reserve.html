@@ -4,24 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>にしうらピアノ教室 予約状況</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
   <style>
-    body { font-family: sans-serif; padding: 16px; }
-    h1 { text-align: center; }
-    .slot { padding: 10px; margin: 6px 0; border-radius: 8px; }
-    .available { background: #d4edda; }
-    .reserved { background: #f8d7da; }
+    #app:empty { display:flex; align-items:center; justify-content:center; min-height:100vh; color:#64748b; }
+    .status-open { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
+    .status-busy { background:#f8fafc; color:#64748b; border-color:#e2e8f0; }
+    .slot-cell { transition: background-color .15s ease, transform .15s ease; }
   </style>
 </head>
-<body>
-  <h1>🎹 にしうらピアノ教室</h1>
-  <h3>今週の空き状況</h3>
-  <div id="list"></div>
+<body class="bg-slate-50 text-slate-900">
+  <div id="app"></div>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getFirestore, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-    const firebaseConfig = {
+  <script>
+    const FIREBASE_CONFIG = {
       apiKey: "AIzaSyBrw6A9eUGibQp-axUmNzeQ_s6ZGAegszE",
       authDomain: "pianolessonrs.firebaseapp.com",
       projectId: "pianolessonrs",
@@ -31,23 +29,217 @@
       measurementId: "G-XF3TSCB9K1"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    const APP_ID = "piano-id-res-v1";
+    const DEFAULT_SCHOOL_ID = "nishiura-piano";
+    const DEFAULT_SCHOOL_NAME = "にしうらピアノ教室";
 
-    const listEl = document.getElementById("list");
+    const params = new URLSearchParams(location.search);
+    const SCHOOL_ID = (params.get("school") || DEFAULT_SCHOOL_ID).trim().toLowerCase();
+    const SCHOOL_NAME = params.get("name") || DEFAULT_SCHOOL_NAME;
 
-    const colRef = collection(db, "lessons");
+    const appEl = document.getElementById("app");
 
-    onSnapshot(colRef, (snapshot) => {
-      listEl.innerHTML = "";
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        const div = document.createElement("div");
-        div.className = "slot " + (data.status === "reserved" ? "reserved" : "available");
-        div.textContent = `${data.date} ${data.time} ： ${data.status === "reserved" ? "予約済み" : "空き"}`;
-        listEl.appendChild(div);
-      });
+    let db = null;
+    let auth = null;
+    let currentDate = new Date();
+    let reservations = {};
+    let unsubscribe = null;
+
+    function formatDateKey(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, "0");
+      const d = String(date.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    function getWeekDays(baseDate) {
+      const start = new Date(baseDate);
+      start.setHours(0, 0, 0, 0);
+      const days = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(start);
+        d.setDate(start.getDate() + i);
+        days.push(d);
+      }
+      return days;
+    }
+
+    function getTimeSlots() {
+      const slots = [];
+      for (let h = 9; h <= 20; h++) {
+        slots.push(`${String(h).padStart(2, "0")}:00`);
+        slots.push(`${String(h).padStart(2, "0")}:30`);
+      }
+      return slots;
+    }
+
+    function getStatus(key) {
+      const data = reservations[key];
+      const status = data && data.status ? data.status : "available";
+      return status === "busy" ? "busy" : "available";
+    }
+
+    function render(message = "") {
+      const days = getWeekDays(currentDate);
+      const timeSlots = getTimeSlots();
+
+      appEl.innerHTML = `
+        <div class="min-h-screen">
+          <header class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
+            <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-xl font-black tracking-tight">🎹 ${escapeHtml(SCHOOL_NAME)}</div>
+                <div class="text-xs text-slate-500 mt-1">予約状況のご案内</div>
+              </div>
+              <a href="https://line.me/" class="text-xs px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold whitespace-nowrap">LINEで連絡</a>
+            </div>
+          </header>
+
+          <main class="max-w-6xl mx-auto p-4 md:p-6 space-y-4">
+            <section class="bg-white rounded-3xl border border-slate-200 p-4 shadow-sm">
+              <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div class="text-sm font-black text-slate-700">空き状況</div>
+                  <div class="text-xs text-slate-500 mt-1">ご希望の日時がありましたら LINE でご連絡ください。</div>
+                </div>
+                <div class="flex items-center justify-center gap-2">
+                  <button id="prevWeek" class="px-3 py-2 rounded-xl border bg-white text-sm font-bold">前の週</button>
+                  <div class="px-4 py-2 rounded-xl bg-slate-50 border text-sm font-black min-w-[140px] text-center">${currentDate.getFullYear()}年${String(currentDate.getMonth()+1).padStart(2,"0")}月</div>
+                  <button id="nextWeek" class="px-3 py-2 rounded-xl border bg-white text-sm font-bold">次の週</button>
+                </div>
+              </div>
+              ${message ? `<div class="mt-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">${message}</div>` : ""}
+            </section>
+
+            <section class="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+              <div class="overflow-x-auto">
+                <table class="w-full border-collapse min-w-[760px]">
+                  <thead>
+                    <tr class="bg-slate-50">
+                      <th class="sticky left-0 z-10 bg-white border-b border-r px-3 py-3 text-[11px] uppercase text-slate-400 w-20">Time</th>
+                      ${days.map(d => `
+                        <th class="border-b px-3 py-3 text-center min-w-[96px]">
+                          <div class="text-lg font-black leading-none">${d.getDate()}</div>
+                          <div class="text-[10px] mt-1 ${d.getDay()===0 ? "text-red-400" : d.getDay()===6 ? "text-indigo-500" : "text-slate-400"}">
+                            ${["日","月","火","水","木","金","土"][d.getDay()]}
+                          </div>
+                        </th>
+                      `).join("")}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${timeSlots.map(time => `
+                      <tr>
+                        <td class="sticky left-0 z-10 bg-white border-b border-r px-3 py-3 text-xs font-bold text-slate-500">${time}</td>
+                        ${days.map(d => {
+                          const key = `${formatDateKey(d)}-${time}`;
+                          const status = getStatus(key);
+                          return `
+                            <td class="border-b border-r last:border-r-0 p-2 slot-cell">
+                              <div class="h-12 rounded-2xl border flex items-center justify-center text-xs font-black ${status === "available" ? "status-open" : "status-busy"}">
+                                ${status === "available" ? "空き" : "予約済み"}
+                              </div>
+                            </td>
+                          `;
+                        }).join("")}
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="grid md:grid-cols-2 gap-3">
+              <div class="bg-white rounded-3xl border border-slate-200 p-4 shadow-sm">
+                <div class="text-sm font-black mb-3">見方</div>
+                <div class="flex flex-wrap gap-2 text-sm">
+                  <span class="inline-flex items-center px-3 py-2 rounded-xl border status-open">空き</span>
+                  <span class="inline-flex items-center px-3 py-2 rounded-xl border status-busy">予約済み</span>
+                </div>
+              </div>
+              <div class="bg-white rounded-3xl border border-slate-200 p-4 shadow-sm">
+                <div class="text-sm font-black mb-2">ご予約について</div>
+                <div class="text-sm text-slate-600 leading-7">
+                  ご希望の日時がありましたら、LINEでご連絡ください。<br />
+                  予約確定は教室からの返信をもって確定となります。
+                </div>
+              </div>
+            </section>
+          </main>
+        </div>
+      `;
+
+      document.getElementById("prevWeek").onclick = () => {
+        currentDate.setDate(currentDate.getDate() - 7);
+        currentDate = new Date(currentDate);
+        render();
+      };
+      document.getElementById("nextWeek").onclick = () => {
+        currentDate.setDate(currentDate.getDate() + 7);
+        currentDate = new Date(currentDate);
+        render();
+      };
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, s => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[s]));
+    }
+
+    async function init() {
+      render("読み込み中です…");
+      try {
+        firebase.initializeApp(FIREBASE_CONFIG);
+        auth = firebase.auth();
+        db = firebase.firestore();
+
+        try {
+          await auth.signInAnonymously();
+        } catch (e) {
+          console.warn("Anonymous auth skipped:", e);
+        }
+
+        const schoolDocPath = `artifacts/${APP_ID}/public/data/schools/${SCHOOL_ID}`;
+        const schoolDoc = await db.doc(schoolDocPath).get();
+
+        if (!schoolDoc.exists) {
+          render(`教室ID「${escapeHtml(SCHOOL_ID)}」が見つかりません。reserve.html 内の DEFAULT_SCHOOL_ID を確認してください。`);
+          return;
+        }
+
+        const schoolData = schoolDoc.data() || {};
+        if (schoolData.name && !params.get("name")) {
+          document.title = `${schoolData.name} 予約状況`;
+        }
+
+        const reservationsPath = `artifacts/${APP_ID}/public/data/schools/${SCHOOL_ID}/reservations`;
+        unsubscribe = db.collection(reservationsPath).onSnapshot((snapshot) => {
+          const next = {};
+          snapshot.forEach((doc) => {
+            next[doc.id] = doc.data();
+          });
+          reservations = next;
+          render();
+        }, (error) => {
+          console.error(error);
+          render("予約状況を読み込めませんでした。Firestore の Rules を確認してください。");
+        });
+      } catch (error) {
+        console.error(error);
+        render("初期化に失敗しました。ファイル差し替え後に再読み込みしてください。");
+      }
+    }
+
+    window.addEventListener("beforeunload", () => {
+      if (unsubscribe) unsubscribe();
     });
+
+    init();
   </script>
 </body>
 </html>
