@@ -40,12 +40,6 @@
       .monthLabel { font-size: 12px; min-width: 100px; }
       .nav button { font-size: 12px; padding: 6px 8px; }
     }
-      h1 { font-size: 28px; }
-      .panel { padding: 12px; }
-      th { font-size: 12px; }
-      td.time { font-size: 12px; }
-      .cell { font-size: 12px; padding: 8px 4px; }
-    }
   </style>
 </head>
 <body>
@@ -60,8 +54,8 @@
         <button id="nextWeek">次の週</button>
       </div>
       <div class="legend">
-        <span class="badge availableBadge">空き</span>
-        <span class="badge reservedBadge">予約済み</span>
+        <span class="badge availableBadge">予約可</span>
+        <span class="badge reservedBadge">予約不可</span>
       </div>
     </div>
 
@@ -163,7 +157,7 @@
           const isReserved = data.status === "busy" || data.status === "reserved";
           return `
             <td class="slot">
-              <div class="cell ${isReserved ? "reserved" : "available"}">${isReserved ? "予約済み" : "空き"}</div>
+              <div class="cell ${isReserved ? "reserved" : "available"}">${isReserved ? "予約不可" : "予約可"}</div>
             </td>
           `;
         }).join("");
