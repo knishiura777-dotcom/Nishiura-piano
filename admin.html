@@ -20,8 +20,8 @@
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; }
-        thead th { position: sticky; top: 64px; z-index: 25; background: #f8fafc; }
-        th.time-head { left: 0; z-index: 35; background: white; }
+        thead th { position: sticky; top: 64px; z-index: 20; background: #f8fafc; }
+        th.time-head { left: 0; z-index: 30; }
         td.time-cell { position: sticky; left: 0; z-index: 10; background: white; }
         #root:empty { display: flex; align-items: center; justify-content: center; height: 100vh; background: #f8fafc; }
         #root:empty::after { content: "システムを起動中..."; color: #64748b; font-weight: bold; }
@@ -176,6 +176,13 @@
                 }
                 return slots;
             }, []);
+
+            const formatLocalDateKey = (date) => {
+                const y = date.getFullYear();
+                const m = String(date.getMonth() + 1).padStart(2, '0');
+                const d = String(date.getDate()).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            };
 
             const days = useMemo(() => {
                 const d = [];
@@ -479,11 +486,11 @@
                         </div>
                         
                         <div className="bg-white rounded-[2rem] border border-slate-100 shadow-xl overflow-hidden shadow-indigo-50/50">
-                            <div className="overflow-x-auto custom-scrollbar">
+                            <div className="overflow-auto custom-scrollbar max-h-[78vh]">
                                 <table className="w-full border-collapse">
                                     <thead>
                                         <tr className="bg-slate-50/50">
-                                            <th className="time-head p-4 border-b border-r text-[10px] font-black text-slate-400 uppercase w-20 sticky left-0 bg-white z-20">Time</th>
+                                            <th className="p-4 border-b border-r text-[10px] font-black text-slate-400 uppercase w-20 sticky left-0 bg-white z-20">Time</th>
                                             {days.map((date, i) => (
                                                 <th key={i} className="p-4 border-b text-center min-w-[100px]"><div className="text-lg font-black text-slate-700 leading-none">{date.getDate()}</div><div className={`text-[10px] font-black uppercase mt-1 ${date.getDay() === 0 ? 'text-red-400' : date.getDay() === 6 ? 'text-indigo-400' : 'text-slate-400'}`}>{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()]}</div></th>
                                             ))}
@@ -492,9 +499,9 @@
                                     <tbody>
                                         {timeSlots.map((time) => (
                                             <tr key={time} className="group">
-                                                <td className="time-cell p-3 border-r border-b text-center text-xs font-bold text-slate-500 sticky left-0 bg-white z-10 group-hover:bg-slate-50">{time}</td>
+                                                <td className="p-3 border-r border-b text-center text-xs font-bold text-slate-500 sticky left-0 bg-white z-10 group-hover:bg-slate-50">{time}</td>
                                                 {days.map((date, i) => {
-                                                    const dateStr = date.toISOString().split('T')[0];
+                                                    const dateStr = formatLocalDateKey(date);
                                                     const key = `${dateStr}-${time}`;
                                                     const data = reservations[key];
                                                     const status = data?.status || 'available';
