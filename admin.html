@@ -174,6 +174,13 @@
                 return slots;
             }, []);
 
+            const formatLocalDateKey = (date) => {
+                const y = date.getFullYear();
+                const m = String(date.getMonth() + 1).padStart(2, '0');
+                const d = String(date.getDate()).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            };
+
             const days = useMemo(() => {
                 const d = [];
                 const start = new Date(currentDate);
@@ -491,7 +498,7 @@
                                             <tr key={time} className="group">
                                                 <td className="p-3 border-r border-b text-center text-xs font-bold text-slate-500 sticky left-0 bg-white z-10 group-hover:bg-slate-50">{time}</td>
                                                 {days.map((date, i) => {
-                                                    const dateStr = date.toISOString().split('T')[0];
+                                                    const dateStr = formatLocalDateKey(date);
                                                     const key = `${dateStr}-${time}`;
                                                     const data = reservations[key];
                                                     const status = data?.status || 'available';
