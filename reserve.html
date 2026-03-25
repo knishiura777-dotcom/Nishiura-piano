@@ -12,7 +12,7 @@
     .panel { background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 16px; margin-bottom: 16px; }
     .nav { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
     .nav button { border: 1px solid #cbd5e1; background: white; border-radius: 10px; padding: 8px 14px; font-weight: bold; cursor: pointer; }
-    .monthLabel { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 14px; font-weight: bold; min-width: 140px; text-align: center; }
+    .monthLabel { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 14px; font-weight: bold; min-width: 180px; text-align: center; }
     .legend { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
     .badge { padding: 8px 12px; border-radius: 999px; font-weight: bold; font-size: 14px; }
     .availableBadge { background: #d1fae5; color: #065f46; }
@@ -28,6 +28,7 @@
     .cell { border-radius: 12px; padding: 10px 6px; font-weight: bold; font-size: 13px; }
     .available { background: #d1fae5; color: #065f46; }
     .reserved { background: #ef4444; color: white; }
+    .todayHead { background: #eff6ff; }
     .sun { color: #dc2626; }
     .sat { color: #2563eb; }
     .msg { color: #64748b; text-align: center; padding: 18px; }
@@ -39,7 +40,7 @@
       th, td { font-size: 11px; }
       td.time { font-size: 11px; width: 60px; }
       .cell { font-size: 11px; padding: 6px 2px; }
-      .monthLabel { font-size: 12px; min-width: 100px; }
+      .monthLabel { font-size: 12px; min-width: 120px; }
       .nav button { font-size: 12px; padding: 6px 8px; }
     }
   </style>
@@ -47,13 +48,14 @@
 <body>
   <div class="wrap">
     <h1>🎹 にしうらピアノ教室</h1>
-    <div class="sub">今週の予約状況</div>
+    <div class="sub">今日から7日間の予約状況</div>
 
     <div class="panel">
       <div class="nav">
-        <button id="prevWeek">前の週</button>
-        <div class="monthLabel" id="monthLabel">-</div>
-        <button id="nextWeek">次の週</button>
+        <button id="prevWeek">前の7日間</button>
+        <div class="monthLabel" id="rangeLabel">-</div>
+        <button id="nextWeek">次の7日間</button>
+        <button id="todayBtn">今日に戻る</button>
       </div>
       <div class="legend">
         <span class="badge availableBadge">予約可</span>
@@ -96,19 +98,19 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    const monthLabel = document.getElementById("monthLabel");
+    const rangeLabel = document.getElementById("rangeLabel");
     const headerRow = document.getElementById("headerRow");
     const tableBody = document.getElementById("tableBody");
     const prevWeekBtn = document.getElementById("prevWeek");
     const nextWeekBtn = document.getElementById("nextWeek");
+    const todayBtn = document.getElementById("todayBtn");
 
-    let currentStart = getStartOfWeek(new Date());
+    let currentStart = getStartDate(new Date());
     let reservations = {};
 
-    function getStartOfWeek(date) {
+    function getStartDate(date) {
       const d = new Date(date);
       d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() - d.getDay());
       return d;
     }
 
@@ -138,15 +140,21 @@
       return slots;
     }
 
+    function isSameDate(a, b) {
+      return formatDate(a) === formatDate(b);
+    }
+
     function render() {
       const weekDates = getWeekDates(currentStart);
       const timeSlots = getTimeSlots();
+      const today = new Date();
 
-      monthLabel.textContent = `${weekDates[0].getFullYear()}年${weekDates[0].getMonth() + 1}月`;
+      rangeLabel.textContent = `${weekDates[0].getMonth() + 1}/${weekDates[0].getDate()} ～ ${weekDates[6].getMonth() + 1}/${weekDates[6].getDate()}`;
 
       headerRow.innerHTML = `<th class="timeHead">時間</th>` + weekDates.map((date, index) => {
-        const cls = index === 0 ? "sun" : index === 6 ? "sat" : "";
-        return `<th><div>${date.getDate()}</div><div class="${cls}">${DAYS[date.getDay()]}</div></th>`;
+        const dayClass = index === 0 ? "sun" : index === 6 ? "sat" : "";
+        const todayClass = isSameDate(date, today) ? "todayHead" : "";
+        return `<th class="${todayClass}"><div>${date.getDate()}</div><div class="${dayClass}">${DAYS[date.getDay()]}</div></th>`;
       }).join("");
 
       tableBody.innerHTML = "";
@@ -176,6 +184,11 @@
     nextWeekBtn.addEventListener("click", () => {
       currentStart.setDate(currentStart.getDate() + 7);
       currentStart = new Date(currentStart);
+      render();
+    });
+
+    todayBtn.addEventListener("click", () => {
+      currentStart = getStartDate(new Date());
       render();
     });
 
